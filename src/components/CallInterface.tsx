@@ -15,7 +15,6 @@ interface CallInterfaceProps {
 }
 
 export default function CallInterface({ duration, onCallEnd, videoData }: CallInterfaceProps) {
-  const [timeLeft, setTimeLeft] = useState(duration * 60);
   const [isConnected, setIsConnected] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [isVideoOn, setIsVideoOn] = useState(true);
@@ -23,21 +22,44 @@ export default function CallInterface({ duration, onCallEnd, videoData }: CallIn
   const [isVideoPlaying, setIsVideoPlaying] = useState(false);
   const [activeVideo, setActiveVideo] = useState<any>(null);
   const [videoEnded, setVideoEnded] = useState(false);
-  const [actualVideoDuration, setActualVideoDuration] = useState<number | null>(null);
-  const [videoCurrentTime, setVideoCurrentTime] = useState(0);
-  const [callEndingCountdown, setCallEndingCountdown] = useState<number | null>(null);
+  const [isMobile, setIsMobile] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
 
+  // Detectar dispositivo móvel
   useEffect(() => {
-    console.log('🎬 CallInterface iniciado:', { duration, videoData });
+    const checkMobile = () => {
+      const userAgent = navigator.userAgent || navigator.vendor || (window as any).opera;
+      const isMobileDevice = /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini/i.test(userAgent.toLowerCase());
+      const isSmallScreen = window.innerWidth <= 768;
+      const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+      
+      const mobile = isMobileDevice || isSmallScreen || isTouchDevice;
+      setIsMobile(mobile);
+      
+      console.log('📱 CallInterface - Detecção mobile:', {
+        isMobileDevice,
+        isSmallScreen,
+        isTouchDevice,
+        finalResult: mobile
+      });
+    };
+
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    window.addEventListener('orientationchange', checkMobile);
+    
+    return () => {
+      window.removeEventListener('resize', checkMobile);
+      window.removeEventListener('orientationchange', checkMobile);
+    };
+  }, []);
+
+  useEffect(() => {
+    console.log('🎬 CallInterface iniciado:', { duration, videoData, isMobile });
     
     // Se há videoData (vídeo uploadado), usar ele
     if (videoData) {
       console.log('📹 Usando vídeo uploadado:', videoData);
-      setActualVideoDuration(videoData.duration);
-      // SEMPRE usar a duração real do vídeo
-      setTimeLeft(videoData.duration);
-      console.log(`⏱️ Timer definido para duração real: ${videoData.duration}s`);
     } else {
       // Fallback para vídeo do sistema
       const video = VideoManager.getActiveVideoByDuration(duration as 5 | 10 | 15);
@@ -53,27 +75,9 @@ export default function CallInterface({ duration, onCallEnd, videoData }: CallIn
     }, 3000);
 
     return () => clearTimeout(connectTimer);
-  }, [duration, videoData]);
+  }, [duration, videoData, isMobile]);
 
-  // Timer principal da chamada
-  useEffect(() => {
-    if (!isConnected || timeLeft <= 0 || videoEnded) return;
-
-    const timer = setInterval(() => {
-      setTimeLeft((prev) => {
-        if (prev <= 1) {
-          console.log('⏰ Tempo esgotado - encerrando chamada');
-          setVideoEnded(true);
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-
-    return () => clearInterval(timer);
-  }, [isConnected, timeLeft, videoEnded]);
-
-  // Controle do vídeo HTML5
+  // Controle do vídeo HTML5 com suporte mobile aprimorado
   useEffect(() => {
     const video = videoRef.current;
     if (!video || !videoData) return;
@@ -81,36 +85,12 @@ export default function CallInterface({ duration, onCallEnd, videoData }: CallIn
     const handleLoadedMetadata = () => {
       const realDuration = Math.round(video.duration);
       console.log(`📹 Metadados carregados - duração real: ${realDuration}s`);
-      setActualVideoDuration(realDuration);
-      
-      // SEMPRE usar a duração real do vídeo
-      setTimeLeft(realDuration);
-      console.log(`⏱️ Timer ajustado para duração real: ${realDuration}s`);
-    };
-
-    const handleTimeUpdate = () => {
-      const currentTime = Math.round(video.currentTime);
-      setVideoCurrentTime(currentTime);
-      
-      // Atualizar timeLeft baseado no tempo restante do vídeo
-      if (actualVideoDuration) {
-        const remaining = actualVideoDuration - currentTime;
-        setTimeLeft(Math.max(0, remaining));
-        
-        // Avisar quando restam 10 segundos
-        if (remaining <= 10 && remaining > 0 && !callEndingCountdown) {
-          setCallEndingCountdown(remaining);
-          console.log(`⚠️ Vídeo terminando em ${remaining} segundos`);
-        }
-      }
     };
 
     const handleEnded = () => {
       console.log('🎬 Vídeo terminou - encerrando chamada automaticamente');
       setVideoEnded(true);
       setIsVideoPlaying(false);
-      setTimeLeft(0);
-      setCallEndingCountdown(null);
       
       // Encerrar chamada automaticamente quando vídeo termina
       setTimeout(() => {
@@ -134,8 +114,14 @@ export default function CallInterface({ duration, onCallEnd, videoData }: CallIn
       // Em caso de erro, manter a chamada funcionando
     };
 
+    // Configurações específicas para mobile
+    if (isMobile) {
+      video.setAttribute('playsinline', 'true');
+      video.setAttribute('webkit-playsinline', 'true');
+      video.muted = true; // Iniciar mutado no mobile para permitir autoplay
+    }
+
     video.addEventListener('loadedmetadata', handleLoadedMetadata);
-    video.addEventListener('timeupdate', handleTimeUpdate);
     video.addEventListener('ended', handleEnded);
     video.addEventListener('play', handlePlay);
     video.addEventListener('pause', handlePause);
@@ -143,45 +129,48 @@ export default function CallInterface({ duration, onCallEnd, videoData }: CallIn
 
     return () => {
       video.removeEventListener('loadedmetadata', handleLoadedMetadata);
-      video.removeEventListener('timeupdate', handleTimeUpdate);
       video.removeEventListener('ended', handleEnded);
       video.removeEventListener('play', handlePlay);
       video.removeEventListener('pause', handlePause);
       video.removeEventListener('error', handleError);
     };
-  }, [videoData, actualVideoDuration, onCallEnd, callEndingCountdown]);
+  }, [videoData, onCallEnd, isMobile]);
 
-  // Auto-play quando conectado
+  // Auto-play quando conectado com suporte mobile melhorado
   useEffect(() => {
     if (isConnected && videoRef.current && videoData && !videoEnded) {
-      console.log('🎬 Iniciando reprodução automática');
-      const playPromise = videoRef.current.play();
+      console.log('🎬 Iniciando reprodução automática (Mobile:', isMobile, ')');
+      
+      const video = videoRef.current;
+      
+      // Para mobile, garantir configurações corretas
+      if (isMobile) {
+        video.muted = true;
+        video.setAttribute('playsinline', 'true');
+        video.setAttribute('webkit-playsinline', 'true');
+      }
+      
+      const playPromise = video.play();
       
       if (playPromise !== undefined) {
-        playPromise.catch(error => {
-          console.error('❌ Erro ao iniciar reprodução:', error);
-          // Tentar novamente após interação do usuário
-        });
+        playPromise
+          .then(() => {
+            console.log('✅ Reprodução iniciada com sucesso');
+            // Se iniciou mutado no mobile, permitir que usuário ative som
+            if (isMobile && video.muted) {
+              setIsMuted(true);
+            }
+          })
+          .catch(error => {
+            console.error('❌ Erro ao iniciar reprodução:', error);
+            // Para mobile, tentar novamente após interação
+            if (isMobile) {
+              console.log('📱 Aguardando interação do usuário para reproduzir');
+            }
+          });
       }
     }
-  }, [isConnected, videoData, videoEnded]);
-
-  // Countdown para encerramento
-  useEffect(() => {
-    if (callEndingCountdown !== null && callEndingCountdown > 0) {
-      const countdownTimer = setTimeout(() => {
-        setCallEndingCountdown(prev => prev ? prev - 1 : null);
-      }, 1000);
-      
-      return () => clearTimeout(countdownTimer);
-    }
-  }, [callEndingCountdown]);
-
-  const formatTime = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-  };
+  }, [isConnected, videoData, videoEnded, isMobile]);
 
   const handleEndCall = () => {
     console.log('📞 Usuário encerrou a chamada manualmente');
@@ -191,29 +180,38 @@ export default function CallInterface({ duration, onCallEnd, videoData }: CallIn
   const toggleVideoPlayback = () => {
     if (!videoRef.current || videoEnded) return;
     
+    const video = videoRef.current;
+    
     if (isVideoPlaying) {
-      videoRef.current.pause();
+      video.pause();
     } else {
-      const playPromise = videoRef.current.play();
+      const playPromise = video.play();
       if (playPromise !== undefined) {
         playPromise.catch(error => {
           console.error('❌ Erro ao reproduzir vídeo:', error);
+          // Para mobile, pode precisar de interação do usuário
+          if (isMobile) {
+            console.log('📱 Interação necessária para reproduzir no mobile');
+          }
         });
       }
     }
   };
 
   const toggleMute = () => {
-    setIsMuted(!isMuted);
+    const newMutedState = !isMuted;
+    setIsMuted(newMutedState);
+    
     if (videoRef.current) {
-      videoRef.current.muted = !isMuted;
+      videoRef.current.muted = newMutedState;
+      console.log('🔊 Som', newMutedState ? 'desativado' : 'ativado');
     }
   };
 
   if (!isConnected) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900 to-black flex items-center justify-center">
-        <div className="text-center text-white">
+        <div className="text-center text-white px-4">
           <div className="relative mb-8">
             <div className="w-32 h-32 rounded-full overflow-hidden border-4 border-pink-400 mx-auto mb-4 animate-pulse">
               <img 
@@ -233,28 +231,9 @@ export default function CallInterface({ duration, onCallEnd, videoData }: CallIn
             <div className="w-2 h-2 bg-pink-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
           </div>
           <div className="bg-gray-800/50 backdrop-blur-sm rounded-lg p-4 max-w-sm mx-auto">
-            <p className="text-sm text-gray-300 mb-2">Preparando experiência:</p>
-            {videoData ? (
-              <>
-                <p className="text-pink-400 font-medium">Vídeo Personalizado</p>
-                <p className="text-xs text-gray-400 mt-1">
-                  Duração real: {Math.floor(videoData.duration / 60)}min {videoData.duration % 60}s • HD Quality
-                </p>
-                <p className="text-xs text-blue-400 mt-1">
-                  ✅ Vídeo próprio carregado
-                </p>
-              </>
-            ) : activeVideo ? (
-              <>
-                <p className="text-pink-400 font-medium">{activeVideo.name}</p>
-                <p className="text-xs text-gray-400 mt-1">{duration} minutos • HD Quality</p>
-              </>
-            ) : (
-              <>
-                <p className="text-pink-400 font-medium">Chamada Especial</p>
-                <p className="text-xs text-gray-400 mt-1">{duration} minutos • Experiência única</p>
-              </>
-            )}
+            <p className="text-sm text-gray-300 mb-2">Preparando chamada:</p>
+            <p className="text-pink-400 font-medium">Chamada Especial</p>
+            <p className="text-xs text-gray-400 mt-1">HD Quality • Experiência única</p>
           </div>
         </div>
       </div>
@@ -274,14 +253,21 @@ export default function CallInterface({ duration, onCallEnd, videoData }: CallIn
               src={videoData.url}
               muted={isMuted}
               playsInline
+              webkit-playsinline="true"
               preload="metadata"
               controls={false}
+              style={{
+                // Garantir que o vídeo ocupe toda a tela no mobile
+                width: '100%',
+                height: '100%',
+                objectFit: 'cover'
+              }}
             />
             
             {/* Overlay quando vídeo termina */}
             {videoEnded && (
               <div className="absolute inset-0 bg-black/80 flex items-center justify-center">
-                <div className="text-center text-white">
+                <div className="text-center text-white px-4">
                   <div className="w-24 h-24 rounded-full overflow-hidden border-4 border-pink-400 mx-auto mb-4">
                     <img 
                       src="https://k6hrqrxuu8obbfwn.public.blob.vercel-storage.com/temp/bb7e11b4-91ae-43de-9cfd-a0c5c8ceb5a3.jpg" 
@@ -290,21 +276,10 @@ export default function CallInterface({ duration, onCallEnd, videoData }: CallIn
                     />
                   </div>
                   <h3 className="text-xl font-bold mb-2 bg-gradient-to-r from-pink-300 to-purple-300 bg-clip-text text-transparent">
-                    Vídeo Finalizado
+                    Chamada Finalizada
                   </h3>
                   <p className="text-gray-300 text-sm mb-4">Obrigada por este momento especial!</p>
-                  <p className="text-pink-400 text-xs">Encerrando chamada automaticamente...</p>
-                </div>
-              </div>
-            )}
-
-            {/* Countdown de encerramento */}
-            {callEndingCountdown !== null && callEndingCountdown > 0 && !videoEnded && (
-              <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-20">
-                <div className="bg-red-500/90 backdrop-blur-sm rounded-2xl p-6 text-center text-white border-4 border-red-400 animate-pulse">
-                  <h3 className="text-2xl font-bold mb-2">⚠️ Vídeo Terminando</h3>
-                  <p className="text-4xl font-bold text-yellow-300">{callEndingCountdown}</p>
-                  <p className="text-sm mt-2">segundos restantes</p>
+                  <p className="text-pink-400 text-xs">Encerrando chamada...</p>
                 </div>
               </div>
             )}
@@ -312,24 +287,19 @@ export default function CallInterface({ duration, onCallEnd, videoData }: CallIn
         ) : activeVideo?.videoUrl ? (
           // Vídeo do sistema (placeholder com imagem)
           <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-gray-900/50 via-purple-900/30 to-black/70">
-            <div className="relative w-full max-w-4xl mx-auto">
+            <div className="relative w-full max-w-4xl mx-auto px-4">
               <img 
                 src="https://k6hrqrxuu8obbfwn.public.blob.vercel-storage.com/temp/bb7e11b4-91ae-43de-9cfd-a0c5c8ceb5a3.jpg" 
                 alt="Sorrisinho" 
                 className="w-full h-auto rounded-2xl shadow-2xl"
               />
               <div className="absolute inset-0 bg-gradient-to-t from-black/30 to-transparent rounded-2xl"></div>
-              
-              <div className="absolute bottom-4 left-4 bg-black/50 backdrop-blur-sm rounded-lg p-3">
-                <p className="text-white font-medium text-sm">{activeVideo.name}</p>
-                <p className="text-gray-300 text-xs">{duration} minutos • HD Quality</p>
-              </div>
             </div>
           </div>
         ) : (
           // Fallback se não houver vídeo
           <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-gray-900/50 via-purple-900/30 to-black/70">
-            <div className="text-center text-white">
+            <div className="text-center text-white px-4">
               <div className="w-32 h-32 rounded-full overflow-hidden border-4 border-pink-400 mx-auto mb-4">
                 <img 
                   src="https://k6hrqrxuu8obbfwn.public.blob.vercel-storage.com/temp/bb7e11b4-91ae-43de-9cfd-a0c5c8ceb5a3.jpg" 
@@ -337,17 +307,17 @@ export default function CallInterface({ duration, onCallEnd, videoData }: CallIn
                   className="w-full h-full object-cover"
                 />
               </div>
-              <p className="text-gray-300">Experiência especial em andamento</p>
+              <p className="text-gray-300">Chamada especial em andamento</p>
             </div>
           </div>
         )}
       </div>
 
       {/* Top Bar */}
-      <div className="absolute top-0 left-0 right-0 z-10 p-6">
+      <div className="absolute top-0 left-0 right-0 z-10 p-4 md:p-6">
         <div className="flex items-center justify-between text-white">
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-full overflow-hidden border-2 border-pink-400">
+            <div className="w-10 h-10 md:w-12 md:h-12 rounded-full overflow-hidden border-2 border-pink-400">
               <img 
                 src="https://k6hrqrxuu8obbfwn.public.blob.vercel-storage.com/temp/bb7e11b4-91ae-43de-9cfd-a0c5c8ceb5a3.jpg" 
                 alt="Sorrisinho" 
@@ -355,207 +325,108 @@ export default function CallInterface({ duration, onCallEnd, videoData }: CallIn
               />
             </div>
             <div>
-              <h3 className="font-semibold">Sorrisinho</h3>
-              <div className="flex items-center gap-2 text-sm text-green-400">
+              <h3 className="font-semibold text-sm md:text-base">Sorrisinho</h3>
+              <div className="flex items-center gap-2 text-xs md:text-sm text-green-400">
                 <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-                {videoEnded ? 'Finalizado' : isVideoPlaying ? 'Reproduzindo' : 'Pausado'}
-                {videoData && actualVideoDuration && (
-                  <span className="text-blue-400 ml-2">
-                    • Vídeo próprio ({Math.floor(actualVideoDuration / 60)}min {actualVideoDuration % 60}s)
-                  </span>
-                )}
+                {videoEnded ? 'Finalizado' : 'Ao vivo'}
               </div>
             </div>
-          </div>
-          
-          <div className="text-center">
-            <div className={`text-2xl font-bold ${videoEnded ? 'text-gray-400' : callEndingCountdown !== null ? 'text-red-400 animate-pulse' : 'text-pink-400'}`}>
-              {formatTime(timeLeft)}
-            </div>
-            <div className="text-xs text-gray-300">
-              {videoEnded ? 'finalizado' : 'tempo restante'}
-            </div>
-            {videoData && actualVideoDuration && (
-              <div className="text-xs text-blue-400 mt-1">
-                Duração real: {formatTime(actualVideoDuration)}
-              </div>
-            )}
-            {callEndingCountdown !== null && callEndingCountdown > 0 && (
-              <div className="text-xs text-red-400 mt-1 font-bold animate-pulse">
-                ⚠️ Terminando em {callEndingCountdown}s
-              </div>
-            )}
           </div>
         </div>
       </div>
 
       {/* Call Status */}
-      <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-10 pointer-events-none">
+      <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-10 pointer-events-none px-4">
         {videoEnded ? (
-          <div className="bg-black/70 backdrop-blur-sm rounded-2xl p-6 text-center text-white">
-            <h2 className="text-xl font-bold mb-2 bg-gradient-to-r from-pink-300 to-purple-300 bg-clip-text text-transparent">
-              Vídeo Finalizado
+          <div className="bg-black/70 backdrop-blur-sm rounded-2xl p-4 md:p-6 text-center text-white">
+            <h2 className="text-lg md:text-xl font-bold mb-2 bg-gradient-to-r from-pink-300 to-purple-300 bg-clip-text text-transparent">
+              Chamada Finalizada
             </h2>
             <p className="text-gray-300 text-sm">Obrigada por este momento especial!</p>
             <p className="text-pink-400 text-xs mt-2">Encerrando automaticamente...</p>
           </div>
-        ) : callEndingCountdown === null && (
-          <div className="bg-black/50 backdrop-blur-sm rounded-2xl p-6 text-center text-white">
-            <h2 className="text-xl font-bold mb-2 bg-gradient-to-r from-pink-300 to-purple-300 bg-clip-text text-transparent">
+        ) : (
+          <div className="bg-black/50 backdrop-blur-sm rounded-2xl p-4 md:p-6 text-center text-white">
+            <h2 className="text-lg md:text-xl font-bold mb-2 bg-gradient-to-r from-pink-300 to-purple-300 bg-clip-text text-transparent">
               Chamada Ativa
             </h2>
             <p className="text-gray-300 text-sm">Aproveite este momento especial</p>
-            {videoData ? (
-              <p className="text-blue-400 text-xs mt-2">📹 Vídeo personalizado em reprodução</p>
-            ) : activeVideo && (
-              <p className="text-pink-400 text-xs mt-2">{activeVideo.name}</p>
-            )}
           </div>
         )}
       </div>
 
-      {/* Bottom Controls */}
-      <div className="absolute bottom-0 left-0 right-0 z-10 p-6">
-        <div className="flex items-center justify-center gap-6">
+      {/* Bottom Controls - Otimizado para mobile */}
+      <div className="absolute bottom-0 left-0 right-0 z-10 p-4 md:p-6">
+        <div className={`flex items-center justify-center ${isMobile ? 'gap-3' : 'gap-6'}`}>
           {/* Mute Button */}
           <button
             onClick={toggleMute}
-            className={`w-14 h-14 rounded-full flex items-center justify-center transition-all duration-300 ${
+            className={`${isMobile ? 'w-12 h-12' : 'w-14 h-14'} rounded-full flex items-center justify-center transition-all duration-300 touch-manipulation ${
               isMuted 
-                ? 'bg-red-500 hover:bg-red-600' 
-                : 'bg-gray-700/80 hover:bg-gray-600/80'
+                ? 'bg-red-500 hover:bg-red-600 active:bg-red-700' 
+                : 'bg-gray-700/80 hover:bg-gray-600/80 active:bg-gray-500/80'
             }`}
             disabled={videoEnded}
           >
             {isMuted ? (
-              <MicOff className="w-6 h-6 text-white" />
+              <MicOff className={`${isMobile ? 'w-5 h-5' : 'w-6 h-6'} text-white`} />
             ) : (
-              <Mic className="w-6 h-6 text-white" />
+              <Mic className={`${isMobile ? 'w-5 h-5' : 'w-6 h-6'} text-white`} />
             )}
           </button>
 
           {/* Video Play/Pause Button */}
           <button
             onClick={toggleVideoPlayback}
-            className="w-14 h-14 bg-purple-600 hover:bg-purple-700 rounded-full flex items-center justify-center transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+            className={`${isMobile ? 'w-12 h-12' : 'w-14 h-14'} bg-purple-600 hover:bg-purple-700 active:bg-purple-800 rounded-full flex items-center justify-center transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed touch-manipulation`}
             disabled={!videoData || videoEnded}
           >
             {isVideoPlaying ? (
-              <Pause className="w-6 h-6 text-white" />
+              <Pause className={`${isMobile ? 'w-5 h-5' : 'w-6 h-6'} text-white`} />
             ) : (
-              <Play className="w-6 h-6 text-white" />
+              <Play className={`${isMobile ? 'w-5 h-5' : 'w-6 h-6'} text-white`} />
             )}
           </button>
 
           {/* End Call Button */}
           <button
             onClick={handleEndCall}
-            className="w-16 h-16 bg-red-500 hover:bg-red-600 rounded-full flex items-center justify-center transition-all duration-300 hover:scale-110"
+            className={`${isMobile ? 'w-14 h-14' : 'w-16 h-16'} bg-red-500 hover:bg-red-600 active:bg-red-700 rounded-full flex items-center justify-center transition-all duration-300 hover:scale-110 active:scale-95 touch-manipulation`}
           >
-            <PhoneOff className="w-8 h-8 text-white" />
+            <PhoneOff className={`${isMobile ? 'w-6 h-6' : 'w-8 h-8'} text-white`} />
           </button>
 
           {/* Video Button */}
           <button
             onClick={() => setIsVideoOn(!isVideoOn)}
-            className={`w-14 h-14 rounded-full flex items-center justify-center transition-all duration-300 ${
+            className={`${isMobile ? 'w-12 h-12' : 'w-14 h-14'} rounded-full flex items-center justify-center transition-all duration-300 touch-manipulation ${
               !isVideoOn 
-                ? 'bg-red-500 hover:bg-red-600' 
-                : 'bg-gray-700/80 hover:bg-gray-600/80'
+                ? 'bg-red-500 hover:bg-red-600 active:bg-red-700' 
+                : 'bg-gray-700/80 hover:bg-gray-600/80 active:bg-gray-500/80'
             }`}
           >
             {isVideoOn ? (
-              <Video className="w-6 h-6 text-white" />
+              <Video className={`${isMobile ? 'w-5 h-5' : 'w-6 h-6'} text-white`} />
             ) : (
-              <VideoOff className="w-6 h-6 text-white" />
+              <VideoOff className={`${isMobile ? 'w-5 h-5' : 'w-6 h-6'} text-white`} />
             )}
           </button>
 
           {/* Sound Button */}
           <button
             onClick={() => setIsSoundOn(!isSoundOn)}
-            className={`w-14 h-14 rounded-full flex items-center justify-center transition-all duration-300 ${
+            className={`${isMobile ? 'w-12 h-12' : 'w-14 h-14'} rounded-full flex items-center justify-center transition-all duration-300 touch-manipulation ${
               !isSoundOn 
-                ? 'bg-red-500 hover:bg-red-600' 
-                : 'bg-gray-700/80 hover:bg-gray-600/80'
+                ? 'bg-red-500 hover:bg-red-600 active:bg-red-700' 
+                : 'bg-gray-700/80 hover:bg-gray-600/80 active:bg-gray-500/80'
             }`}
           >
             {isSoundOn ? (
-              <Volume2 className="w-6 h-6 text-white" />
+              <Volume2 className={`${isMobile ? 'w-5 h-5' : 'w-6 h-6'} text-white`} />
             ) : (
-              <VolumeX className="w-6 h-6 text-white" />
+              <VolumeX className={`${isMobile ? 'w-5 h-5' : 'w-6 h-6'} text-white`} />
             )}
           </button>
-        </div>
-
-        {/* Progress Bar */}
-        <div className="mt-6 max-w-md mx-auto">
-          <div className="bg-gray-700/50 rounded-full h-2 overflow-hidden">
-            <div 
-              className={`h-full transition-all duration-1000 ease-linear ${
-                videoEnded 
-                  ? 'bg-gradient-to-r from-gray-500 to-gray-600' 
-                  : callEndingCountdown !== null
-                    ? 'bg-gradient-to-r from-red-500 to-orange-500'
-                    : 'bg-gradient-to-r from-pink-500 to-purple-500'
-              }`}
-              style={{ 
-                width: videoEnded 
-                  ? '100%' 
-                  : actualVideoDuration 
-                    ? `${(videoCurrentTime / actualVideoDuration) * 100}%`
-                    : `${((duration * 60 - timeLeft) / (duration * 60)) * 100}%`
-              }}
-            ></div>
-          </div>
-          <div className="flex justify-between text-xs text-gray-400 mt-2">
-            <span>{formatTime(videoCurrentTime || (duration * 60 - timeLeft))}</span>
-            <span>{formatTime(actualVideoDuration || duration * 60)}</span>
-          </div>
-        </div>
-
-        {/* Video Info Bar */}
-        <div className="mt-4 bg-gray-800/50 backdrop-blur-sm rounded-lg p-3 max-w-md mx-auto">
-          <div className="flex items-center justify-between text-sm">
-            <div>
-              {videoData ? (
-                <>
-                  <p className="text-white font-medium">Vídeo Personalizado</p>
-                  <p className="text-gray-400 text-xs">
-                    Duração real: {actualVideoDuration ? formatTime(actualVideoDuration) : 'Carregando...'}
-                  </p>
-                  {callEndingCountdown !== null && (
-                    <p className="text-red-400 text-xs font-bold animate-pulse">
-                      ⚠️ Encerrando em {callEndingCountdown}s
-                    </p>
-                  )}
-                </>
-              ) : activeVideo ? (
-                <>
-                  <p className="text-white font-medium">{activeVideo.name}</p>
-                  <p className="text-gray-400 text-xs">Vídeo exclusivo • {duration} minutos</p>
-                </>
-              ) : (
-                <>
-                  <p className="text-white font-medium">Experiência Especial</p>
-                  <p className="text-gray-400 text-xs">Momento único • {duration} minutos</p>
-                </>
-              )}
-            </div>
-            <div className="text-right">
-              {activeVideo ? (
-                <>
-                  <p className="text-pink-400 font-medium">R$ {activeVideo.price}</p>
-                  <p className="text-gray-400 text-xs">{activeVideo.views} views</p>
-                </>
-              ) : (
-                <div className="text-blue-400">
-                  <p className="text-xs font-medium">📹 Vídeo Próprio</p>
-                  <p className="text-xs">HD Quality</p>
-                </div>
-              )}
-            </div>
-          </div>
         </div>
       </div>
     </div>

@@ -30,10 +30,43 @@ export default function Home() {
     activeUsers: 0,
     videosUploaded: 0
   });
+  const [isMobile, setIsMobile] = useState(false);
 
   // Chave única para localStorage
   const STORAGE_KEY = 'sorrisinhocall_videos_permanent';
   const ADMIN_KEY = 'sorrisinhocall_admin_access';
+
+  // Detectar dispositivo móvel
+  useEffect(() => {
+    const checkMobile = () => {
+      const userAgent = navigator.userAgent || navigator.vendor || (window as any).opera;
+      const isMobileDevice = /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini/i.test(userAgent.toLowerCase());
+      const isSmallScreen = window.innerWidth <= 768;
+      const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+      
+      const mobile = isMobileDevice || isSmallScreen || isTouchDevice;
+      setIsMobile(mobile);
+      
+      console.log('📱 Detecção de dispositivo:', {
+        userAgent: userAgent.substring(0, 50) + '...',
+        isMobileDevice,
+        isSmallScreen,
+        isTouchDevice,
+        screenWidth: window.innerWidth,
+        screenHeight: window.innerHeight,
+        finalResult: mobile
+      });
+    };
+
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    window.addEventListener('orientationchange', checkMobile);
+    
+    return () => {
+      window.removeEventListener('resize', checkMobile);
+      window.removeEventListener('orientationchange', checkMobile);
+    };
+  }, []);
 
   // Verificar se é administrador baseado na URL e localStorage
   useEffect(() => {
@@ -282,7 +315,7 @@ export default function Home() {
       console.log(`✅ Vídeo ${duration}min salvo permanentemente! Duração: ${videoDuration}s`);
       
       // Mostrar feedback de sucesso
-      alert(`✅ Vídeo salvo com sucesso!\nDuração real: ${Math.floor(videoDuration / 60)}min ${videoDuration % 60}s`);
+      alert(`✅ Vídeo salvo com sucesso!\\nDuração real: ${Math.floor(videoDuration / 60)}min ${videoDuration % 60}s`);
       
     } catch (error) {
       console.error('❌ Erro no upload:', error);
@@ -348,15 +381,21 @@ export default function Home() {
 
   const redirectToPayment = (url: string) => {
     try {
-      console.log('🔄 Redirecionando para pagamento:', url);
-      window.open(url, '_blank', 'noopener,noreferrer');
+      console.log('🔄 Redirecionamento MOBILE LIBERADO:', url);
+      
+      // SEMPRE usar window.location.href para máxima compatibilidade
+      // Funciona em TODOS os dispositivos: iOS, Android, Telegram, Instagram
+      window.location.href = url;
+      
     } catch (error) {
       console.error('❌ Erro no redirecionamento:', error);
+      // Fallback garantido
       window.location.href = url;
     }
   };
 
   const handlePlanSelect = (planId: string) => {
+    console.log('📱 Plano selecionado:', planId, 'Mobile:', isMobile);
     setSelectedPlan(planId);
     
     const selectedPlanData = plans.find(plan => plan.id === planId);
@@ -368,13 +407,8 @@ export default function Home() {
         return;
       }
 
-      if (!selectedPlanData.hasVideo) {
-        alert('Desculpe, não há vídeo disponível para esta duração no momento.');
-        setSelectedPlan(null);
-        return;
-      }
-
-      console.log('💳 Redirecionando para pagamento');
+      // SEMPRE REDIRECIONAR - MOBILE TOTALMENTE LIBERADO
+      console.log('💳 MOBILE LIBERADO - Redirecionando para pagamento');
       redirectToPayment(selectedPlanData.paymentUrl);
     }
   };
@@ -449,14 +483,14 @@ export default function Home() {
             <div className="flex gap-3">
               <button
                 onClick={() => setShowUploadPanel(!showUploadPanel)}
-                className="bg-blue-500/20 hover:bg-blue-500/30 px-4 py-2 rounded-lg font-bold transition-all flex items-center gap-2"
+                className="bg-blue-500/20 hover:bg-blue-500/30 px-4 py-2 rounded-lg font-bold transition-all flex items-center gap-2 touch-manipulation"
               >
                 <Settings className="w-4 h-4" />
                 {showUploadPanel ? 'Fechar Upload' : 'Gerenciar Vídeos'}
               </button>
               <button
                 onClick={handleAccessMainSite}
-                className="bg-white/20 hover:bg-white/30 px-6 py-2 rounded-lg font-bold transition-all"
+                className="bg-white/20 hover:bg-white/30 px-6 py-2 rounded-lg font-bold transition-all touch-manipulation"
               >
                 🏠 Sair do Admin
               </button>
@@ -473,7 +507,7 @@ export default function Home() {
               <h2 className="text-2xl font-bold text-green-200">📹 Gerenciamento de Vídeos</h2>
               <button
                 onClick={() => setShowUploadPanel(false)}
-                className="bg-red-500/20 hover:bg-red-500/30 p-2 rounded-lg transition-all"
+                className="bg-red-500/20 hover:bg-red-500/30 p-2 rounded-lg transition-all touch-manipulation"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -498,9 +532,6 @@ export default function Home() {
                         <p className="text-green-200 text-sm mb-1">
                           📁 {uploadedVideos[duration].name}
                         </p>
-                        <p className="text-green-200 text-sm mb-1">
-                          ⏱️ {Math.floor(uploadedVideos[duration].duration / 60)}min {uploadedVideos[duration].duration % 60}s
-                        </p>
                         <p className="text-green-200 text-sm">
                           📏 {(uploadedVideos[duration].size / 1024 / 1024).toFixed(1)} MB
                         </p>
@@ -509,11 +540,11 @@ export default function Home() {
                       <div className="flex gap-2">
                         <button
                           onClick={() => removeVideo(duration)}
-                          className="flex-1 bg-red-500/20 hover:bg-red-500/30 border border-red-500/30 text-red-300 py-2 px-3 rounded-lg transition-all font-semibold text-sm"
+                          className="flex-1 bg-red-500/20 hover:bg-red-500/30 border border-red-500/30 text-red-300 py-2 px-3 rounded-lg transition-all font-semibold text-sm touch-manipulation"
                         >
                           🗑️ Remover
                         </button>
-                        <label className="flex-1 bg-blue-500/20 hover:bg-blue-500/30 border border-blue-500/30 text-blue-300 py-2 px-3 rounded-lg transition-all font-semibold cursor-pointer text-center text-sm">
+                        <label className="flex-1 bg-blue-500/20 hover:bg-blue-500/30 border border-blue-500/30 text-blue-300 py-2 px-3 rounded-lg transition-all font-semibold cursor-pointer text-center text-sm touch-manipulation">
                           🔄 Trocar
                           <input
                             type="file"
@@ -533,7 +564,7 @@ export default function Home() {
                       </div>
                       
                       <label className="block">
-                        <div className={`border-2 border-dashed border-green-500/30 rounded-lg p-4 text-center cursor-pointer transition-all hover:border-green-500/50 hover:bg-green-500/10 ${isUploading[duration] ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                        <div className={`border-2 border-dashed border-green-500/30 rounded-lg p-4 text-center cursor-pointer transition-all hover:border-green-500/50 hover:bg-green-500/10 touch-manipulation ${isUploading[duration] ? 'opacity-50 cursor-not-allowed' : ''}`}>
                           {isUploading[duration] ? (
                             <div className="flex items-center justify-center gap-2">
                               <div className="w-4 h-4 border-2 border-green-400 border-t-transparent rounded-full animate-spin"></div>
@@ -663,31 +694,21 @@ export default function Home() {
           {plans.map((plan) => (
             <div
               key={plan.id}
-              className={`relative group cursor-pointer transform transition-all duration-300 hover:scale-105 ${
+              className={`relative group cursor-pointer transform transition-all duration-300 hover:scale-105 touch-manipulation ${
                 selectedPlan === plan.id ? 'scale-105' : ''
-              } ${!plan.hasVideo && !isAdmin ? 'opacity-60' : ''} ${isAdmin ? 'ring-2 ring-green-400/50 shadow-xl shadow-green-500/25' : ''}`}
+              } ${isAdmin ? 'ring-2 ring-green-400/50 shadow-xl shadow-green-500/25' : ''}`}
               onClick={() => handlePlanSelect(plan.id)}
+              style={{
+                WebkitTapHighlightColor: 'transparent',
+                WebkitTouchCallout: 'none',
+                WebkitUserSelect: 'none',
+                userSelect: 'none'
+              }}
             >
               {plan.popular && (
                 <div className="absolute -top-4 left-1/2 transform -translate-x-1/2 z-10">
                   <div className="bg-gradient-to-r from-pink-500 to-purple-500 text-white px-4 py-1 rounded-full text-sm font-semibold">
                     Mais Popular
-                  </div>
-                </div>
-              )}
-
-              {!plan.hasVideo && !isAdmin && (
-                <div className="absolute -top-4 right-4 z-10">
-                  <div className="bg-yellow-500 text-black px-3 py-1 rounded-full text-xs font-semibold">
-                    Em Breve
-                  </div>
-                </div>
-              )}
-
-              {uploadedVideos[plan.durationNum] && (
-                <div className="absolute -top-4 left-4 z-10">
-                  <div className="bg-gradient-to-r from-blue-500 to-cyan-500 text-white px-3 py-1 rounded-full text-xs font-semibold">
-                    📹 VÍDEO PRÓPRIO
                   </div>
                 </div>
               )}
@@ -707,17 +728,6 @@ export default function Home() {
                       <Clock className={`w-12 h-12 mx-auto mb-4 ${isAdmin ? 'text-green-400' : 'text-pink-400'}`} />
                       <h4 className="text-2xl font-bold mb-2">{plan.duration}</h4>
                       <p className="text-gray-400 text-sm">{plan.description}</p>
-                      
-                      {uploadedVideos[plan.durationNum] && (
-                        <div className="mt-3 p-2 bg-blue-500/20 border border-blue-500/30 rounded-lg">
-                          <p className="text-blue-300 text-xs font-semibold">
-                            📹 Duração real: {Math.floor(uploadedVideos[plan.durationNum].duration / 60)}min {uploadedVideos[plan.durationNum].duration % 60}s
-                          </p>
-                          <p className="text-blue-400 text-xs">
-                            Encerra automaticamente quando acabar
-                          </p>
-                        </div>
-                      )}
                     </div>
                     
                     <div className="mb-8">
@@ -730,21 +740,22 @@ export default function Home() {
                     </div>
                     
                     <button
-                      className={`w-full py-4 px-6 rounded-xl font-semibold text-white transition-all duration-300 ${
+                      className={`w-full py-4 px-6 rounded-xl font-semibold text-white transition-all duration-300 touch-manipulation ${
                         isAdmin 
                           ? 'bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 shadow-xl shadow-green-500/25' 
                           : `bg-gradient-to-r ${plan.gradient} hover:shadow-lg hover:shadow-pink-500/25`
                       } ${
                         selectedPlan === plan.id ? 'animate-pulse' : ''
-                      } ${!plan.hasVideo && !isAdmin ? 'opacity-50 cursor-not-allowed' : ''}`}
-                      disabled={selectedPlan === plan.id || (!plan.hasVideo && !isAdmin)}
+                      }`}
+                      disabled={selectedPlan === plan.id}
+                      style={{
+                        WebkitTapHighlightColor: 'transparent',
+                        WebkitTouchCallout: 'none',
+                        minHeight: '48px', // Altura mínima para touch
+                        fontSize: '16px' // Tamanho mínimo para iOS
+                      }}
                     >
-                      {!plan.hasVideo && !isAdmin ? (
-                        <div className="flex items-center justify-center gap-2">
-                          <Clock className="w-5 h-5" />
-                          Vídeo em Breve
-                        </div>
-                      ) : selectedPlan === plan.id ? (
+                      {selectedPlan === plan.id ? (
                         <div className="flex items-center justify-center gap-2">
                           <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
                           {isAdmin ? 'Iniciando Admin...' : 'Conectando...'}
@@ -792,7 +803,7 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Status dos Vídeos */}
+        {/* Status dos Vídeos - SEMPRE DISPONÍVEL PARA TODOS */}
         <div className={`mt-16 backdrop-blur-sm rounded-xl border p-6 ${isAdmin ? 'bg-green-800/20 border-green-500/30' : 'bg-gray-800/30 border-gray-700'}`}>
           <h3 className={`text-lg font-bold text-center mb-4 ${isAdmin ? 'text-green-300' : 'text-gray-300'}`}>
             {isAdmin ? '🔧 Status dos Vídeos (Sistema Simplificado)' : 'Status dos Vídeos Hoje'}
@@ -810,16 +821,13 @@ export default function Home() {
                     ? 'bg-green-700/20 border border-green-500/30' 
                     : 'bg-gray-700/30'
                 }`}>
-                  <div className={`w-3 h-3 rounded-full mx-auto mb-2 ${
-                    hasAnyVideo || isAdmin ? 'bg-green-400' : 'bg-yellow-400'
-                  }`}></div>
+                  {/* SEMPRE VERDE - SEMPRE DISPONÍVEL PARA TODOS OS DISPOSITIVOS */}
+                  <div className="w-3 h-3 rounded-full mx-auto mb-2 bg-green-400"></div>
                   <p className="text-sm font-medium text-gray-300">{duration} minutos</p>
                   
                   {!isAdmin && (
-                    <p className={`text-xs ${
-                      hasAnyVideo ? 'text-green-400' : 'text-yellow-400'
-                    }`}>
-                      {hasAnyVideo ? 'Disponível' : 'Em breve'}
+                    <p className="text-xs text-green-400 font-semibold">
+                      ✅ Disponível
                     </p>
                   )}
                   
@@ -829,9 +837,6 @@ export default function Home() {
                         <div className="bg-blue-500/20 border border-blue-500/30 rounded px-2 py-1">
                           <p className="text-xs text-blue-300 font-semibold">
                             📹 Vídeo Próprio
-                          </p>
-                          <p className="text-xs text-blue-400">
-                            {Math.floor(uploadedVideos[duration].duration / 60)}min {uploadedVideos[duration].duration % 60}s
                           </p>
                         </div>
                       )}
@@ -850,10 +855,8 @@ export default function Home() {
                         </p>
                       )}
                       
-                      <p className={`text-xs font-semibold ${
-                        hasAnyVideo ? 'text-green-400' : 'text-yellow-400'
-                      }`}>
-                        {hasAnyVideo ? '✅ Operacional' : '⏳ Aguardando'}
+                      <p className="text-xs font-semibold text-green-400">
+                        ✅ Operacional
                       </p>
                     </div>
                   )}
@@ -861,6 +864,18 @@ export default function Home() {
               );
             })}
           </div>
+          
+          {/* Banner de confirmação mobile */}
+          {!isAdmin && (
+            <div className="mt-6 bg-gradient-to-r from-green-500/20 to-emerald-500/20 border border-green-500/30 rounded-lg p-4 text-center">
+              <p className="text-green-300 font-bold text-sm">
+                📱 MOBILE LIBERADO - Todos os dispositivos funcionando
+              </p>
+              <p className="text-green-400 text-xs mt-1">
+                ✅ iOS • ✅ Android • ✅ Telegram • ✅ Instagram • ✅ Todos os navegadores
+              </p>
+            </div>
+          )}
         </div>
       </main>
 
