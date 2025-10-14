@@ -31,6 +31,8 @@ export default function Home() {
     videosUploaded: 0
   });
   const [isMobile, setIsMobile] = useState(false);
+  const [showAdminLogin, setShowAdminLogin] = useState(false);
+  const [adminPassword, setAdminPassword] = useState('');
 
   // Chave única para localStorage
   const STORAGE_KEY = 'sorrisinhocall_videos_permanent';
@@ -74,9 +76,16 @@ export default function Home() {
       const currentUrl = window.location.href;
       const pathname = window.location.pathname;
       const urlParams = new URLSearchParams(window.location.search);
+      const hash = window.location.hash;
       
-      // Verificar se a URL contém /admin ou parâmetro admin
-      const isAdminUrl = currentUrl.includes('/admin') || pathname.includes('/admin') || urlParams.get('admin') === 'true';
+      // MÚLTIPLAS FORMAS DE ATIVAR ADMIN - MAIS FLEXÍVEL
+      const isAdminUrl = currentUrl.includes('/admin') || 
+                        pathname.includes('/admin') || 
+                        urlParams.get('admin') === 'true' ||
+                        urlParams.get('mode') === 'admin' ||
+                        hash.includes('admin') ||
+                        currentUrl.includes('admin=true') ||
+                        currentUrl.includes('mode=admin');
       
       // Verificar se tem sessão admin válida no localStorage
       const savedAdminAccess = localStorage.getItem(ADMIN_KEY);
@@ -86,7 +95,7 @@ export default function Home() {
         try {
           const adminData = JSON.parse(savedAdminAccess);
           const timeDiff = Date.now() - adminData.timestamp;
-          const isValid = timeDiff < 24 * 60 * 60 * 1000; // 24 horas
+          const isValid = timeDiff < 7 * 24 * 60 * 60 * 1000; // 7 DIAS (mais tempo)
           hasValidSession = isValid && adminData.active;
         } catch (error) {
           console.error('❌ Erro ao verificar sessão admin:', error);
@@ -97,42 +106,55 @@ export default function Home() {
       console.log('🔍 Verificando acesso admin:', { 
         currentUrl, 
         pathname, 
+        urlParams: urlParams.toString(),
+        hash,
         isAdminUrl,
         hasValidSession,
         timestamp: new Date().toISOString()
       });
       
-      // Ativar admin se URL indica OU se tem sessão válida
+      // ATIVAR ADMIN - LÓGICA CORRIGIDA
       const shouldBeAdmin = isAdminUrl || hasValidSession;
-      setIsAdmin(shouldBeAdmin);
       
-      if (shouldBeAdmin) {
-        if (!hasValidSession) {
-          // Criar nova sessão se não existir
+      if (shouldBeAdmin !== isAdmin) {
+        setIsAdmin(shouldBeAdmin);
+        
+        if (shouldBeAdmin) {
+          // SEMPRE criar/atualizar sessão quando ativar admin
           localStorage.setItem(ADMIN_KEY, JSON.stringify({
             active: true,
             timestamp: Date.now(),
-            user: 'admin'
+            user: 'admin',
+            loginTime: new Date().toISOString()
           }));
+          console.log('✅ Acesso admin ATIVADO - Sessão criada');
+          loadPersistedVideos();
+        } else {
+          console.log('❌ Acesso admin DESATIVADO');
         }
-        console.log('✅ Acesso admin ATIVADO');
-        loadPersistedVideos();
       }
     };
 
+    // VERIFICAR IMEDIATAMENTE
     checkAdminAccess();
+
+    // VERIFICAR A CADA 1 SEGUNDO (para capturar mudanças de URL)
+    const intervalCheck = setInterval(checkAdminAccess, 1000);
 
     // Listener para mudanças na URL
     const handleUrlChange = () => {
-      setTimeout(checkAdminAccess, 50);
+      setTimeout(checkAdminAccess, 100);
     };
     
     window.addEventListener('popstate', handleUrlChange);
+    window.addEventListener('hashchange', handleUrlChange);
     
     return () => {
+      clearInterval(intervalCheck);
       window.removeEventListener('popstate', handleUrlChange);
+      window.removeEventListener('hashchange', handleUrlChange);
     };
-  }, []);
+  }, [isAdmin]); // DEPENDÊNCIA ADICIONADA
 
   // Função para carregar vídeos persistidos do localStorage
   const loadPersistedVideos = () => {
@@ -421,12 +443,39 @@ export default function Home() {
 
   const handleAccessMainSite = () => {
     console.log('🏠 Saindo do modo admin');
+    setSelectedPlan(null);
     localStorage.removeItem(ADMIN_KEY);
     setIsAdmin(false);
     setShowUploadPanel(false);
     
     const baseUrl = window.location.origin;
     window.location.href = baseUrl;
+  };
+
+  // Função para login manual do admin
+  const handleAdminLogin = () => {
+    const correctPassword = 'admin123'; // Senha simples para acesso
+    
+    if (adminPassword === correctPassword) {
+      // Ativar modo admin
+      setIsAdmin(true);
+      localStorage.setItem(ADMIN_KEY, JSON.stringify({
+        active: true,
+        timestamp: Date.now(),
+        user: 'admin',
+        loginTime: new Date().toISOString()
+      }));
+      
+      setShowAdminLogin(false);
+      setAdminPassword('');
+      loadPersistedVideos();
+      
+      console.log('✅ Login admin realizado com sucesso');
+      alert('✅ Login realizado com sucesso! Bem-vindo ao painel administrativo.');
+    } else {
+      alert('❌ Senha incorreta. Tente novamente.');
+      setAdminPassword('');
+    }
   };
 
   // Função para obter vídeo para reprodução
@@ -695,8 +744,7 @@ export default function Home() {
             <div
               key={plan.id}
               className={`relative group cursor-pointer transform transition-all duration-300 hover:scale-105 touch-manipulation ${
-                selectedPlan === plan.id ? 'scale-105' : ''
-              } ${isAdmin ? 'ring-2 ring-green-400/50 shadow-xl shadow-green-500/25' : ''}`}
+                selectedPlan === plan.id ? 'scale-105' : ''\n              } ${isAdmin ? 'ring-2 ring-green-400/50 shadow-xl shadow-green-500/25' : ''}`}
               onClick={() => handlePlanSelect(plan.id)}
               style={{
                 WebkitTapHighlightColor: 'transparent',
@@ -741,12 +789,8 @@ export default function Home() {
                     
                     <button
                       className={`w-full py-4 px-6 rounded-xl font-semibold text-white transition-all duration-300 touch-manipulation ${
-                        isAdmin 
-                          ? 'bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 shadow-xl shadow-green-500/25' 
-                          : `bg-gradient-to-r ${plan.gradient} hover:shadow-lg hover:shadow-pink-500/25`
-                      } ${
-                        selectedPlan === plan.id ? 'animate-pulse' : ''
-                      }`}
+                        isAdmin \n                          ? 'bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 shadow-xl shadow-green-500/25' \n                          : `bg-gradient-to-r ${plan.gradient} hover:shadow-lg hover:shadow-pink-500/25`\n                      } ${
+                        selectedPlan === plan.id ? 'animate-pulse' : ''\n                      }`}
                       disabled={selectedPlan === plan.id}
                       style={{
                         WebkitTapHighlightColor: 'transparent',
@@ -817,10 +861,7 @@ export default function Home() {
               
               return (
                 <div key={duration} className={`text-center p-4 rounded-lg ${
-                  isAdmin 
-                    ? 'bg-green-700/20 border border-green-500/30' 
-                    : 'bg-gray-700/30'
-                }`}>
+                  isAdmin \n                    ? 'bg-green-700/20 border border-green-500/30' \n                    : 'bg-gray-700/30'\n                }`}>
                   {/* SEMPRE VERDE - SEMPRE DISPONÍVEL PARA TODOS OS DISPOSITIVOS */}
                   <div className="w-3 h-3 rounded-full mx-auto mb-2 bg-green-400"></div>
                   <p className="text-sm font-medium text-gray-300">{duration} minutos</p>
@@ -884,6 +925,19 @@ export default function Home() {
         <div className="container mx-auto px-4 text-center text-gray-400">
           <p>&copy; 2024 SorrisinhoCall. Todos os direitos reservados.</p>
           <p className="text-sm mt-2">Plataforma segura e privada para maiores de 18 anos</p>
+          
+          {/* Botão de acesso admin */}
+          {!isAdmin && (
+            <div className="mt-4">
+              <button
+                onClick={() => setShowAdminLogin(true)}
+                className="text-xs text-gray-600 hover:text-gray-400 transition-colors"
+              >
+                Admin
+              </button>
+            </div>
+          )}
+          
           {isAdmin && (
             <div className="mt-4 p-3 bg-green-500/10 border border-green-500/20 rounded-lg inline-block">
               <p className="text-green-400 font-bold">
@@ -896,6 +950,55 @@ export default function Home() {
           )}
         </div>
       </footer>
+
+      {/* Modal de Login Admin */}
+      {showAdminLogin && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-900 border border-gray-700 rounded-2xl p-8 max-w-md w-full">
+            <div className="text-center mb-6">
+              <Shield className="w-12 h-12 mx-auto mb-4 text-blue-400" />
+              <h3 className="text-2xl font-bold text-white mb-2">Acesso Administrativo</h3>
+              <p className="text-gray-400">Digite a senha para acessar o painel</p>
+            </div>
+            
+            <div className="space-y-4">
+              <input
+                type="password"
+                value={adminPassword}
+                onChange={(e) => setAdminPassword(e.target.value)}
+                placeholder="Senha do administrador"
+                className="w-full px-4 py-3 bg-gray-800 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                onKeyPress={(e) => e.key === 'Enter' && handleAdminLogin()}
+                autoFocus
+              />
+              
+              <div className="flex gap-3">
+                <button
+                  onClick={() => {
+                    setShowAdminLogin(false);
+                    setAdminPassword('');
+                  }}
+                  className="flex-1 px-4 py-3 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleAdminLogin}
+                  className="flex-1 px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors font-semibold"
+                >
+                  Entrar
+                </button>
+              </div>
+            </div>
+            
+            <div className="mt-4 p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg">
+              <p className="text-blue-300 text-sm text-center">
+                💡 Senha: <code className="bg-gray-800 px-2 py-1 rounded">admin123</code>
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
